@@ -12,5 +12,6 @@ fn main() {
     let directory_name = std::env::args().nth(1).expect("No directory!");
     let pattern = std::env::args().nth(2).expect("No pattern!");
 
-    find_in_files(directory_name.as_ref(), pattern.as_ref());
+    let fif_config = Configuration::default();
+    find_in_files(directory_name.as_ref(), pattern.as_ref(), &fif_config);
 }
