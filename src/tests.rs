@@ -14,8 +14,8 @@ mod tests {
     #[test]
     fn test_find_matching_string_case_insensitive() {
         let config = Configuration {
-            case_sensitive: false,
-            pattern: Pattern::from_string("the")
+            case_insensitive: true,
+            pattern: Pattern::text_from_string("the")
         };
         let content = "The quick brown fox
         jumps over the lazy dog";
@@ -30,8 +30,8 @@ mod regex_tests {
     #[test]
     fn test_find_matching_with_regex() {
         let config = Configuration {
-            case_sensitive: false,
-            pattern: Regex()
+            case_insensitive: true,
+            pattern: Pattern::regex_from_string(r".?the.?")
         };
         let content = "The quick brown fox jumps over the lazy dog"; 
         let matches = find_in_lines(content, config);

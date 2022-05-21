@@ -18,32 +18,55 @@ impl Default for Pattern {
 impl Clone for Pattern {
     fn clone(&self) -> Self {
         match self {
-            Self::Text(text) => Self::Text(text.clone()),
+            Self::Text(text) => Self::Text(text.clone()),        
+            #[cfg(feature = "regex")]
+            Self::Regex(r) => Self::Regex(r.clone()),
         }
     }
 }
 
 impl Pattern {
-    pub fn from_string<T: ToString + ?Sized>(string: &T) -> Self {
+    pub fn text_from_string<T: ToString + ?Sized>(string: &T) -> Self {
         Pattern::Text(string.to_string())
     }
 
-    pub fn into_matching_function(self) -> Box<dyn Fn(&str) -> bool> {
+    #[cfg(feature = "regex")]
+    pub fn regex_from_string<T: ToString>(string: T) -> Self {
+        Pattern::Regex(string.to_string())
+    }
+
+    pub fn into_matching_function(self, case_insensitive: bool) -> Box<dyn Fn(&str) -> bool> {
         match self {
-            Pattern::Text(t) => Box::new(move |line: &str| line.contains(&t)),
+            Pattern::Text(t) => 
+            {
+                if case_insensitive {
+                    Box::new(move |line: &str| line.to_lowercase().contains(&t)) 
+                } else {
+                    Box::new(move |line: &str| line.contains(&t))
+                }
+                
+            },
+            #[cfg(feature = "regex")]
+            Pattern::Regex(regex) => {
+                let mut regex_builder = regex::RegexBuilder::new(&regex);
+                regex_builder.case_insensitive(case_insensitive);
+
+                let regex = regex_builder.build().expect("Failed to build regex");
+                Box::new(move |line: &str| regex.is_match(line))
+            }
         }
     }
 }
 
 pub struct Configuration {
-    pub case_sensitive: bool,
+    pub case_insensitive: bool,
     pub pattern: Pattern,
 }
 
 impl Default for Configuration {
     fn default() -> Self {
         Configuration { 
-            case_sensitive: true,
+            case_insensitive: false,
             pattern: Default::default()
         }
     }
@@ -52,7 +75,7 @@ impl Default for Configuration {
 impl Configuration {
     pub fn default_from_pattern<T: ToString + ?Sized>(pattern: &T) -> Configuration {
         Configuration { 
-            pattern: Pattern::from_string(pattern),
+            pattern: Pattern::text_from_string(pattern),
             ..Default::default()
         }
     }
@@ -102,18 +125,13 @@ pub fn find_in_lines<T, U>(lines: T, configuration: &Configuration) -> Vec<Strin
     let match_predicate  = construct_filtering_predicate(configuration);
     lines
         .map(|line| line.to_string())
-        .filter(match_predicate)
+        .filter(|line | match_predicate(&line))
         .collect()
 }
 
-fn construct_filtering_predicate(configuration: &Configuration) -> Box<dyn Fn(&String) -> bool> {
+fn construct_filtering_predicate(configuration: &Configuration) -> Box<dyn Fn(&str) -> bool> {
     let pattern_clone = configuration.clone_pattern();
-    let match_function = pattern_clone.into_matching_function();
-    if configuration.case_sensitive {
-        Box::new(move |line: &String| match_function(&line))
-    } else {
-        Box::new(move |line: &String| match_function(&line.to_lowercase()))
-    }
+    pattern_clone.into_matching_function(configuration.case_insensitive)
 }
 
 fn print_matching_lines(file_name: &str, matches: Vec<String>) {
