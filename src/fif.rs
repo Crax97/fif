@@ -5,16 +5,40 @@ use std::io::BufRead;
 use std::borrow::Cow;
 use std::path::PathBuf;   
 
+pub enum Pattern {
+    Text(String)
+}
+
+impl Default for Pattern {
+    fn default() -> Self {
+        Pattern::Text(String::default())
+    }
+}
+
+impl Clone for Pattern {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Text(text) => Self::Text(text.clone()),
+        }
+    }
+}
+
+impl Pattern {
+    pub fn from_string<T: ToString + ?Sized>(string: &T) -> Self {
+        Pattern::Text(string.to_string())
+    }
+}
+
 pub struct Configuration {
     pub case_sensitive: bool,
-    pub pattern: String,
+    pub pattern: Pattern,
 }
 
 impl Default for Configuration {
     fn default() -> Self {
         Configuration { 
             case_sensitive: true,
-            pattern: String::default()
+            pattern: Default::default()
         }
     }
 }
@@ -22,12 +46,12 @@ impl Default for Configuration {
 impl Configuration {
     pub fn default_from_pattern<T: ToString + ?Sized>(pattern: &T) -> Configuration {
         Configuration { 
-            pattern: pattern.to_string(),
+            pattern: Pattern::from_string(pattern),
             ..Default::default()
         }
     }
 
-    pub fn clone_pattern(&self) -> String {
+    pub fn clone_pattern(&self) -> Pattern {
         self.pattern.clone()
     }
 }
@@ -68,13 +92,16 @@ pub fn find_in_file(entry: &PathBuf, configuration: &Configuration) -> Result<()
 
 pub fn find_in_lines<T, U>(lines: T, configuration: &Configuration) -> Vec<String>
     where U: ToString, 
-        T: Iterator<Item = U> {
+        T: Iterator<Item = U> {        
+    let pattern_clone = configuration.clone_pattern();
+    let match_function: Box<dyn Fn(&str) -> bool> = match pattern_clone {
+        Pattern::Text(t) => Box::new(move |line: &str| line.contains(&t)),
+    };
+
     let filter_pred : Box<dyn Fn(&String) -> bool> = if configuration.case_sensitive {
-        let line_copy = configuration.clone_pattern();
-        Box::new(move |line: &String| line.contains(&line_copy))
+        Box::new(move |line: &String| match_function(&line))
     } else {
-        let line_copy = configuration.clone_pattern();
-        Box::new(move |line: &String| line.to_lowercase().contains(&line_copy))
+        Box::new(move |line: &String| match_function(&line.to_lowercase()))
     };
     
     lines
