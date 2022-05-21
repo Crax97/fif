@@ -27,6 +27,12 @@ impl Pattern {
     pub fn from_string<T: ToString + ?Sized>(string: &T) -> Self {
         Pattern::Text(string.to_string())
     }
+
+    pub fn into_matching_function(self) -> Box<dyn Fn(&str) -> bool> {
+        match self {
+            Pattern::Text(t) => Box::new(move |line: &str| line.contains(&t)),
+        }
+    }
 }
 
 pub struct Configuration {
@@ -92,22 +98,22 @@ pub fn find_in_file(entry: &PathBuf, configuration: &Configuration) -> Result<()
 
 pub fn find_in_lines<T, U>(lines: T, configuration: &Configuration) -> Vec<String>
     where U: ToString, 
-        T: Iterator<Item = U> {        
-    let pattern_clone = configuration.clone_pattern();
-    let match_function: Box<dyn Fn(&str) -> bool> = match pattern_clone {
-        Pattern::Text(t) => Box::new(move |line: &str| line.contains(&t)),
-    };
+        T: Iterator<Item = U> {
+    let match_predicate  = construct_filtering_predicate(configuration);
+    lines
+        .map(|line| line.to_string())
+        .filter(match_predicate)
+        .collect()
+}
 
-    let filter_pred : Box<dyn Fn(&String) -> bool> = if configuration.case_sensitive {
+fn construct_filtering_predicate(configuration: &Configuration) -> Box<dyn Fn(&String) -> bool> {
+    let pattern_clone = configuration.clone_pattern();
+    let match_function = pattern_clone.into_matching_function();
+    if configuration.case_sensitive {
         Box::new(move |line: &String| match_function(&line))
     } else {
         Box::new(move |line: &String| match_function(&line.to_lowercase()))
-    };
-    
-    lines
-        .map(|line| line.to_string())
-        .filter(filter_pred)
-        .collect()
+    }
 }
 
 fn print_matching_lines(file_name: &str, matches: Vec<String>) {
