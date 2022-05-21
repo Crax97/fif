@@ -3,10 +3,12 @@ use std::error::Error;
 use std::{fs, io};
 use std::io::BufRead;
 use std::borrow::Cow;
-use std::path::PathBuf;   
+use std::path::PathBuf;
 
 pub enum Pattern {
-    Text(String)
+    Text(String),
+    #[cfg(feature = "regex")]
+    Regex(String)
 }
 
 impl Default for Pattern {
