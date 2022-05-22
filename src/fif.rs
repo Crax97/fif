@@ -69,7 +69,7 @@ impl Default for Configuration {
     fn default() -> Self {
         Configuration { 
             case_insensitive: false,
-            pattern: Default::default()
+            pattern: Default::default(),
         }
     }
 }
@@ -87,17 +87,15 @@ impl Configuration {
     }
 }
 
-pub fn find_in_files(directory_name: &str, configuration: &Configuration) {
+pub fn find_in_files(directory_name: &PathBuf, configuration: &Configuration) {
     let folder = fs::read_dir(directory_name).expect("could not open dir");
     for entry in folder.filter(|f| f.is_ok())
         .map(|f|f.unwrap())
     {
         let dir_path = entry.path();
-        let dir_name = dir_path.as_os_str();
-        let dir_name = dir_name.to_string_lossy();
         let metadata = entry.metadata().expect("Failed to open metadata ");
         if metadata.is_dir() {
-            find_in_files(&dir_name, &configuration);
+            find_in_files(&dir_path, &configuration);
         } else if let Err(e) = find_in_file(&dir_path, &configuration) {
             eprintln!("Error while analyzing {}: {}", entry.file_name().to_str().unwrap(), e);
         }

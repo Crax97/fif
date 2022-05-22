@@ -1,17 +1,52 @@
 mod fif;
 mod tests;
 
+use std::path::PathBuf;
+
+use clap::Parser;
+
 use crate::fif::*;
 
+#[derive(Parser)]
+struct CliArgs {
+    pattern: String,
+
+    path: Option<String>,
+    
+    #[cfg(feature="regex")]
+    #[clap(short='r',help="Treat pattern as regex")]
+    is_regex: bool,
+    #[clap(short='i', help="Do case insensitive pattern matching")]
+    is_case_insensitive: bool,
+}
+
+#[cfg(feature="regex")]
+fn make_fif_pattern(args: &CliArgs) -> fif::Pattern {
+    if args.is_regex {
+        fif::Pattern::Regex(args.pattern.clone())
+    } else {
+        fif::Pattern::Text(args.pattern.clone())
+    }
+}
+#[cfg(not(feature="regex"))]
+fn make_fif_pattern(args: &CliArgs) -> fif::Pattern {
+    fif::Pattern::Text(args.pattern.clone())
+}
+impl Into<fif::Configuration> for CliArgs {
+    fn into(self) -> fif::Configuration {
+        Configuration { 
+            case_insensitive: self.is_case_insensitive,
+            pattern: make_fif_pattern(&self)
+        }
+    }
+}
+
+
 fn main() {
-    if std::env::args().len() < 3 {
-        let program_name = std::env::args().nth(0).expect("No program name! wtf?");
-        eprintln!("usage: {0} directory pattern", program_name);
-    }    
+    let args = CliArgs::parse();
+    let root_path = args.path.clone();
+    let root_path : PathBuf = root_path.unwrap_or(".".to_string()).clone().into();
 
-    let directory_name = std::env::args().nth(1).expect("No directory!");
-    let pattern = std::env::args().nth(2).expect("No pattern!");
-
-    let fif_config = Configuration::default_from_pattern(&pattern);
-    find_in_files(directory_name.as_ref(), &fif_config);
+    let fif_config : fif::Configuration = args.into();
+    find_in_files(&root_path, &fif_config);
 }
