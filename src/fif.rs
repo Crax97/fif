@@ -5,6 +5,7 @@ use std::{fs, io};
 use std::io::BufRead;
 use std::path::PathBuf;
 
+pub type Matches = dyn Iterator<Item = Match>;
 pub enum Pattern {
     Text(String),
     #[cfg(feature = "regex")]
@@ -92,9 +93,9 @@ pub struct Match {
     pub line: String,
 }
 
-pub fn find_in_files(directory_name: &PathBuf, configuration: &Configuration) -> HashMap<String, Vec<Match>> {
+pub fn find_in_files(directory_name: &PathBuf, configuration: &Configuration) -> HashMap<String, Box<Matches>> {
     let folder = fs::read_dir(directory_name).expect("could not open dir");
-    let mut matches_in_files: HashMap<String, Vec<Match>> = HashMap::new();
+    let mut matches_in_files: HashMap<String, Box<Matches>> = HashMap::new();
     for entry in folder.filter(|f| f.is_ok())
         .map(|f|f.unwrap())
     {
@@ -116,30 +117,29 @@ pub fn find_in_files(directory_name: &PathBuf, configuration: &Configuration) ->
     matches_in_files
 }
 
-pub fn find_in_file(entry: &PathBuf, configuration: &Configuration) -> Result<Vec<Match>, Box<dyn Error>> {
+pub fn find_in_file(entry: &PathBuf, configuration: &Configuration) -> Result<Box<Matches>, Box<dyn Error>> {
     let file = fs::File::open(entry)?;
     let reader = io::BufReader::new(file);
     let lines = reader.lines()
         .map(|line| line.unwrap_or_default());
     let matches = find_in_lines(lines, &configuration);
-    Ok(matches)
+    Ok(Box::new(matches))
 }
 
-pub fn find_in_lines<T, U>(lines: T, configuration: &Configuration) -> Vec<Match>
+pub fn find_in_lines<T, U>(lines: T, configuration: &Configuration) -> impl Iterator<Item = Match>
     where U: ToString, 
         T: Iterator<Item = U> {
     let match_predicate  = construct_filtering_predicate(configuration);
     lines
         .map(|line| line.to_string())
         .enumerate()
-        .filter(|(_, line) | match_predicate(&line))
+        .filter(move |(_, line) | match_predicate(&line))
         .map(|(row, line)| {
             Match {
                 row: row + 1,
                 line
             }
         })
-        .collect()
 }
 
 fn construct_filtering_predicate(configuration: &Configuration) -> Box<dyn Fn(&str) -> bool> {

@@ -52,10 +52,10 @@ fn main() {
     print_matching_lines(matching_results);
 }
 
-fn print_matching_lines(matching_results: HashMap<String, Vec<fif::Match>>) {
+fn print_matching_lines(matching_results: HashMap<String, Box<fif::Matches>>) {
     
     for (file, matchs) in matching_results {
-        for matchh in matchs.iter() {
+        for matchh in matchs {
             println!("{}:{} => {}", &file, matchh.row, &matchh.line);
         }
     }
