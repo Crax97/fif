@@ -1,8 +1,8 @@
+use std::collections::HashMap;
 use std::error::Error;
 
 use std::{fs, io};
 use std::io::BufRead;
-use std::borrow::Cow;
 use std::path::PathBuf;
 
 pub enum Pattern {
@@ -87,55 +87,62 @@ impl Configuration {
     }
 }
 
-pub fn find_in_files(directory_name: &PathBuf, configuration: &Configuration) {
+pub struct Match {
+    pub row: usize,
+    pub line: String,
+}
+
+pub fn find_in_files(directory_name: &PathBuf, configuration: &Configuration) -> HashMap<String, Vec<Match>> {
     let folder = fs::read_dir(directory_name).expect("could not open dir");
+    let mut matches_in_files: HashMap<String, Vec<Match>> = HashMap::new();
     for entry in folder.filter(|f| f.is_ok())
         .map(|f|f.unwrap())
     {
         let dir_path = entry.path();
         let metadata = entry.metadata().expect("Failed to open metadata ");
         if metadata.is_dir() {
-            find_in_files(&dir_path, &configuration);
-        } else if let Err(e) = find_in_file(&dir_path, &configuration) {
-            eprintln!("Error while analyzing {}: {}", entry.file_name().to_str().unwrap(), e);
+            matches_in_files.extend(find_in_files(&dir_path, &configuration));
+        } else {
+            match find_in_file(&dir_path, &configuration) {
+                Ok(lines) => { 
+                    let file_name = dir_path.as_os_str();
+                    let file_name = file_name.to_string_lossy().to_string();
+                    matches_in_files.insert(file_name, lines);
+                },
+                Err(e) => eprintln!("Error while analyzing {}: {}", entry.file_name().to_str().unwrap(), e)
+            };
         }
-
     }
+    matches_in_files
 }
 
-fn entry_path_to_str(entry_path: &PathBuf) -> Cow<str> {
-    let file_name = entry_path.as_os_str();
-    file_name.to_string_lossy()
-}
-
-pub fn find_in_file(entry: &PathBuf, configuration: &Configuration) -> Result<(), Box<dyn Error>> {
-    let file_name = entry_path_to_str(&entry);
+pub fn find_in_file(entry: &PathBuf, configuration: &Configuration) -> Result<Vec<Match>, Box<dyn Error>> {
     let file = fs::File::open(entry)?;
     let reader = io::BufReader::new(file);
     let lines = reader.lines()
-        .filter_map(|line| line.ok());
+        .map(|line| line.unwrap_or_default());
     let matches = find_in_lines(lines, &configuration);
-    print_matching_lines(file_name.as_ref(), matches);
-    Ok(())
+    Ok(matches)
 }
 
-pub fn find_in_lines<T, U>(lines: T, configuration: &Configuration) -> Vec<String>
+pub fn find_in_lines<T, U>(lines: T, configuration: &Configuration) -> Vec<Match>
     where U: ToString, 
         T: Iterator<Item = U> {
     let match_predicate  = construct_filtering_predicate(configuration);
     lines
         .map(|line| line.to_string())
-        .filter(|line | match_predicate(&line))
+        .enumerate()
+        .filter(|(_, line) | match_predicate(&line))
+        .map(|(row, line)| {
+            Match {
+                row: row + 1,
+                line
+            }
+        })
         .collect()
 }
 
 fn construct_filtering_predicate(configuration: &Configuration) -> Box<dyn Fn(&str) -> bool> {
     let pattern_clone = configuration.clone_pattern();
     pattern_clone.into_matching_function(configuration.case_insensitive)
-}
-
-fn print_matching_lines(file_name: &str, matches: Vec<String>) {
-    for matching in matches {
-        println!("{} => {}", file_name, matching);
-    }
 }

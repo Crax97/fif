@@ -1,7 +1,7 @@
 mod fif;
 mod tests;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, collections::HashMap};
 
 use clap::Parser;
 
@@ -48,5 +48,15 @@ fn main() {
     let root_path : PathBuf = root_path.unwrap_or(".".to_string()).clone().into();
 
     let fif_config : fif::Configuration = args.into();
-    find_in_files(&root_path, &fif_config);
+    let matching_results = find_in_files(&root_path, &fif_config);
+    print_matching_lines(matching_results);
+}
+
+fn print_matching_lines(matching_results: HashMap<String, Vec<fif::Match>>) {
+    
+    for (file, matchs) in matching_results {
+        for matchh in matchs.iter() {
+            println!("{}:{} => {}", &file, matchh.row, &matchh.line);
+        }
+    }
 }
