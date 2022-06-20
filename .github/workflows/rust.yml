@@ -35,7 +35,7 @@ jobs:
     - name: Run tests
       run: cargo test --verbose --all-features
     - name: Build
-      run: cargo build --release --verbose --all-features --target ${{ matrix.target }}
+      run: cargo build --release --verbose --all-features
     - name: Upload build artifacts
       uses: actions/upload-artifact@v3.1.0
       with:
