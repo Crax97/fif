@@ -96,7 +96,12 @@ async fn collector(first_directory: PathBuf, file_writer: Sender<PathBuf>) {
     let mut directory_queue: Vec<PathBuf> = vec![first_directory.clone()];
 
     while let Some(directory) = directory_queue.pop() {
-        let folder = fs::read_dir(directory).expect("could not open dir");
+        let folder = fs::read_dir(&directory);
+        if let Err(e) = folder {
+            eprintln!("could not open path {:?}: {e}", directory);
+            continue;
+        }
+        let folder = folder.unwrap();
         for entry in folder.filter(|f| f.is_ok()).map(|f| f.unwrap()) {
             let dir_path = entry.path();
             let metadata = entry.metadata().expect("Failed to open metadata ");
