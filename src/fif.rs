@@ -6,6 +6,8 @@ use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+use crossbeam_channel::{Receiver, Sender};
+
 pub type Matches = dyn Iterator<Item = Match>;
 pub enum Pattern {
     Text(String),
@@ -60,6 +62,7 @@ impl Pattern {
     }
 }
 
+#[derive(Clone)]
 pub struct Configuration {
     pub case_insensitive: bool,
     pub pattern: Pattern,
@@ -91,13 +94,9 @@ pub struct Match {
     pub row: usize,
     pub line: String,
 }
+async fn collector(first_directory: PathBuf, file_writer: Sender<PathBuf>) {
+    let mut directory_queue: Vec<PathBuf> = vec![first_directory.clone()];
 
-pub async fn find_in_files(
-    directory_name: &PathBuf,
-    configuration: &Configuration,
-) -> HashMap<String, Box<Matches>> {
-    let mut matches_in_files: HashMap<String, Box<Matches>> = HashMap::new();
-    let mut directory_queue: Vec<PathBuf> = vec![directory_name.clone()];
     while let Some(directory) = directory_queue.pop() {
         let folder = fs::read_dir(directory).expect("could not open dir");
         for entry in folder.filter(|f| f.is_ok()).map(|f| f.unwrap()) {
@@ -106,22 +105,54 @@ pub async fn find_in_files(
             if metadata.is_dir() {
                 directory_queue.push(dir_path);
             } else {
-                match find_in_file(&dir_path, &configuration) {
-                    Ok(lines) => {
-                        let file_name = dir_path.as_os_str();
-                        let file_name = file_name.to_string_lossy().to_string();
-                        matches_in_files.insert(file_name, lines);
-                    }
-                    Err(e) => eprintln!(
-                        "Error while analyzing {}: {}",
-                        entry.file_name().to_str().unwrap(),
-                        e
-                    ),
-                };
+                if let Err(e) = file_writer.send(dir_path) {
+                    eprintln!("Failed to send this path to the collector: {}", e);
+                }
             }
         }
     }
+}
 
+async fn matcher(
+    match_writer: Sender<(String, Match)>,
+    file_recv: Receiver<PathBuf>,
+    configuration: Configuration,
+) {
+    while let Ok(file_path) = file_recv.recv() {
+        match find_in_file(&file_path, &configuration) {
+            Ok(lines) => {
+                for line in lines {
+                    let file_path_string = file_path.as_os_str().to_string_lossy();
+                    let file_path_string = file_path_string.to_string();
+                    if let Err(e) = match_writer.send((file_path_string, line)) {
+                        eprintln!("Failed to send this path to the collector: {}", e);
+                    }
+                }
+            }
+            Err(e) => eprintln!(
+                "Error while analyzing {}: {}",
+                file_path.to_str().unwrap(),
+                e
+            ),
+        };
+    }
+}
+pub async fn find_in_files(
+    directory_name: &PathBuf,
+    configuration: &Configuration,
+) -> HashMap<String, Vec<Match>> {
+    let mut matches_in_files: HashMap<String, Vec<Match>> = HashMap::new();
+    let (file_writer, file_recv): (Sender<PathBuf>, Receiver<PathBuf>) =
+        crossbeam_channel::unbounded();
+    let (match_writer, match_recv): (Sender<(String, Match)>, Receiver<(String, Match)>) =
+        crossbeam_channel::unbounded();
+    let _ = tokio::join!(
+        collector(directory_name.clone(), file_writer),
+        matcher(match_writer, file_recv, configuration.clone(),)
+    );
+    while let Ok((file, matchh)) = match_recv.recv() {
+        matches_in_files.entry(file).or_default().push(matchh);
+    }
     matches_in_files
 }
 
