@@ -4,7 +4,10 @@ mod tests {
 
     #[test]
     fn test_find_matching_string() {
-        let config = Configuration::default_from_pattern("the");
+        let config = Configuration {
+            pattern: Pattern::Text("the".to_owned()),
+            ..Default::default()
+        };
         let content = "The quick brown fox
         jumps over the lazy dog";
         let matches = find_in_lines(content.split("\n"), &config);
@@ -15,7 +18,7 @@ mod tests {
     fn test_find_matching_string_case_insensitive() {
         let config = Configuration {
             case_insensitive: true,
-            pattern: Pattern::text_from_string("the")
+            pattern: Pattern::Text("the".to_owned()),
         };
         let content = "The quick brown fox
         jumps over the lazy dog";
@@ -27,7 +30,7 @@ mod tests {
     fn test_line_number_is_correct() {
         let config = Configuration {
             case_insensitive: true,
-            pattern: Pattern::text_from_string("int")
+            pattern: Pattern::Text("int".to_owned()),
         };
         let content = "#include <stdio.h>
         int main() {
@@ -36,13 +39,13 @@ mod tests {
            return 0;
         }";
         let mut matches = find_in_lines(content.split("\n"), &config);
-        
+
         assert_eq!(matches.next().unwrap().row, 2);
         assert_eq!(matches.next().unwrap().row, 3);
         assert_eq!(matches.next().unwrap().row, 4);
         assert!(matches.next().is_none());
     }
-    
+
     #[cfg(feature = "regex")]
     mod regex_tests {
         use crate::fif::*;
@@ -51,23 +54,23 @@ mod tests {
         fn test_find_matching_with_regex() {
             let config = Configuration {
                 case_insensitive: false,
-                pattern: Pattern::regex_from_string(r".?the.?")
+                pattern: Pattern::Regex(r".?the.?".to_owned()),
             };
             let content = "The quick brown
             fox jumps over
-            the lazy dog"; 
+            the lazy dog";
             let matches = find_in_lines(content.split("\n"), &config);
             assert_eq!(matches.count(), 1);
         }
-        
+
         #[test]
         fn test_find_matching_with_regex_case_insensitive() {
             let config = Configuration {
                 case_insensitive: true,
-                pattern: Pattern::regex_from_string(r".?the.?")
+                pattern: Pattern::Regex(r".?the.?".to_owned()),
             };
             let content = "The quick brown
-            fox jumps over the lazy dog"; 
+            fox jumps over the lazy dog";
             let matches = find_in_lines(content.split("\n"), &config);
             assert_eq!(matches.count(), 2);
         }
