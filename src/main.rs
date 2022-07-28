@@ -1,7 +1,7 @@
 mod fif;
 mod tests;
 
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser;
 
@@ -32,11 +32,11 @@ fn make_fif_pattern(args: &CliArgs) -> fif::Pattern {
 fn make_fif_pattern(args: &CliArgs) -> fif::Pattern {
     fif::Pattern::Text(args.pattern.clone())
 }
-impl Into<fif::Configuration> for CliArgs {
-    fn into(self) -> fif::Configuration {
+impl From<CliArgs> for fif::Configuration {
+    fn from(args: CliArgs) -> Self {
         Configuration {
-            case_insensitive: self.is_case_insensitive,
-            pattern: make_fif_pattern(&self),
+            case_insensitive: args.is_case_insensitive,
+            pattern: make_fif_pattern(&args),
         }
     }
 }
@@ -45,7 +45,7 @@ impl Into<fif::Configuration> for CliArgs {
 async fn main() {
     let args = CliArgs::parse();
     let root_path = args.path.clone();
-    let root_path: PathBuf = root_path.unwrap_or(".".to_string()).clone().into();
+    let root_path: PathBuf = root_path.unwrap_or_else(|| ".".to_string()).into();
 
     let fif_config: fif::Configuration = args.into();
     find_in_files(&root_path, fif_config, print_matching_lines).await;

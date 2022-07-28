@@ -1,10 +1,12 @@
 use std::error::Error;
 
 use std::io::BufRead;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use crossbeam_channel::{Receiver, Sender};
+
+type StringMatch = (String, Match);
 
 pub type Matches = dyn Iterator<Item = Match>;
 pub enum Pattern {
@@ -30,15 +32,6 @@ impl Clone for Pattern {
 }
 
 impl Pattern {
-    pub fn text_from_string<T: ToString + ?Sized>(string: &T) -> Self {
-        Pattern::Text(string.to_string())
-    }
-
-    #[cfg(feature = "regex")]
-    pub fn regex_from_string<T: ToString>(string: T) -> Self {
-        Pattern::Regex(string.to_string())
-    }
-
     pub fn into_matching_function(self, case_insensitive: bool) -> Box<dyn Fn(&str) -> bool> {
         match self {
             Pattern::Text(t) => {
@@ -60,29 +53,13 @@ impl Pattern {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Configuration {
     pub case_insensitive: bool,
     pub pattern: Pattern,
 }
 
-impl Default for Configuration {
-    fn default() -> Self {
-        Configuration {
-            case_insensitive: false,
-            pattern: Default::default(),
-        }
-    }
-}
-
 impl Configuration {
-    pub fn default_from_pattern<T: ToString + ?Sized>(pattern: &T) -> Configuration {
-        Configuration {
-            pattern: Pattern::text_from_string(pattern),
-            ..Default::default()
-        }
-    }
-
     pub fn clone_pattern(&self) -> Pattern {
         self.pattern.clone()
     }
@@ -93,7 +70,7 @@ pub struct Match {
     pub line: String,
 }
 async fn collector(first_directory: PathBuf, file_writer: Sender<PathBuf>) {
-    let mut directory_queue: Vec<PathBuf> = vec![first_directory.clone()];
+    let mut directory_queue: Vec<PathBuf> = vec![first_directory];
 
     while let Some(directory) = directory_queue.pop() {
         let folder = fs::read_dir(&directory);
@@ -107,10 +84,8 @@ async fn collector(first_directory: PathBuf, file_writer: Sender<PathBuf>) {
             let metadata = entry.metadata().expect("Failed to open metadata ");
             if metadata.is_dir() {
                 directory_queue.push(dir_path);
-            } else {
-                if let Err(e) = file_writer.send(dir_path) {
-                    eprintln!("Failed to send this path to the collector: {}", e);
-                }
+            } else if let Err(e) = file_writer.send(dir_path) {
+                eprintln!("Failed to send this path to the collector: {}", e);
             }
         }
     }
@@ -141,10 +116,8 @@ async fn matcher(
     }
 }
 
-async fn printer_executor<PrinterFn>(
-    printer_fun: PrinterFn,
-    match_receiver: Receiver<(String, Match)>,
-) where
+async fn printer_executor<PrinterFn>(printer_fun: PrinterFn, match_receiver: Receiver<StringMatch>)
+where
     PrinterFn: Fn(String, Match),
 {
     while let Ok((file, matchh)) = match_receiver.recv() {
@@ -152,7 +125,7 @@ async fn printer_executor<PrinterFn>(
     }
 }
 pub async fn find_in_files<PrinterFn>(
-    directory_name: &PathBuf,
+    directory_name: &Path,
     configuration: Configuration,
     printer_fun: PrinterFn,
 ) where
@@ -160,9 +133,9 @@ pub async fn find_in_files<PrinterFn>(
 {
     let (file_writer, file_recv): (Sender<PathBuf>, Receiver<PathBuf>) =
         crossbeam_channel::unbounded();
-    let (match_writer, match_recv): (Sender<(String, Match)>, Receiver<(String, Match)>) =
+    let (match_writer, match_recv): (Sender<StringMatch>, Receiver<StringMatch>) =
         crossbeam_channel::unbounded();
-    let collector_task = tokio::spawn(collector(directory_name.clone(), file_writer));
+    let collector_task = tokio::spawn(collector(directory_name.into(), file_writer));
     let matcher_task = tokio::spawn(matcher(match_writer, file_recv, configuration));
     let executor_task = tokio::spawn(printer_executor(printer_fun, match_recv));
     collector_task.await.expect("collector_task");
@@ -177,7 +150,7 @@ pub fn find_in_file(
     let file = fs::File::open(entry)?;
     let reader = io::BufReader::new(file);
     let lines = reader.lines().map(|line| line.unwrap_or_default());
-    let matches = find_in_lines(lines, &configuration);
+    let matches = find_in_lines(lines, configuration);
     Ok(Box::new(matches))
 }
 
@@ -190,7 +163,7 @@ where
     lines
         .map(|line| line.to_string())
         .enumerate()
-        .filter(move |(_, line)| match_predicate(&line))
+        .filter(move |(_, line)| match_predicate(line))
         .map(|(row, line)| Match { row: row + 1, line })
 }
 
