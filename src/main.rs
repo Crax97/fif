@@ -48,14 +48,9 @@ async fn main() {
     let root_path: PathBuf = root_path.unwrap_or(".".to_string()).clone().into();
 
     let fif_config: fif::Configuration = args.into();
-    let matching_results = find_in_files(&root_path, &fif_config).await;
-    print_matching_lines(matching_results);
+    find_in_files(&root_path, fif_config, print_matching_lines).await;
 }
 
-fn print_matching_lines(matching_results: HashMap<String, Vec<fif::Match>>) {
-    for (file, matchs) in matching_results {
-        for matchh in matchs {
-            println!("{}:{} => {}", &file, matchh.row, &matchh.line);
-        }
-    }
+fn print_matching_lines(file_name: String, matchh: fif::Match) {
+    println!("{}:{} => {}", &file_name, matchh.row, &matchh.line);
 }

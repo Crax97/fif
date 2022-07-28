@@ -1,9 +1,7 @@
-use std::collections::HashMap;
 use std::error::Error;
 
-use std::fs::DirEntry;
 use std::io::BufRead;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{fs, io};
 
 use crossbeam_channel::{Receiver, Sender};
@@ -137,23 +135,34 @@ async fn matcher(
         };
     }
 }
-pub async fn find_in_files(
+
+async fn printer_executor<PrinterFn>(
+    printer_fun: PrinterFn,
+    match_receiver: Receiver<(String, Match)>,
+) where
+    PrinterFn: Fn(String, Match),
+{
+    while let Ok((file, matchh)) = match_receiver.recv() {
+        printer_fun(file, matchh);
+    }
+}
+pub async fn find_in_files<PrinterFn>(
     directory_name: &PathBuf,
-    configuration: &Configuration,
-) -> HashMap<String, Vec<Match>> {
-    let mut matches_in_files: HashMap<String, Vec<Match>> = HashMap::new();
+    configuration: Configuration,
+    printer_fun: PrinterFn,
+) where
+    PrinterFn: 'static + Fn(String, Match) + std::marker::Send,
+{
     let (file_writer, file_recv): (Sender<PathBuf>, Receiver<PathBuf>) =
         crossbeam_channel::unbounded();
     let (match_writer, match_recv): (Sender<(String, Match)>, Receiver<(String, Match)>) =
         crossbeam_channel::unbounded();
-    let _ = tokio::join!(
-        collector(directory_name.clone(), file_writer),
-        matcher(match_writer, file_recv, configuration.clone(),)
-    );
-    while let Ok((file, matchh)) = match_recv.recv() {
-        matches_in_files.entry(file).or_default().push(matchh);
-    }
-    matches_in_files
+    let collector_task = tokio::spawn(collector(directory_name.clone(), file_writer));
+    let matcher_task = tokio::spawn(matcher(match_writer, file_recv, configuration));
+    let executor_task = tokio::spawn(printer_executor(printer_fun, match_recv));
+    collector_task.await.expect("collector_task");
+    matcher_task.await.expect("matcher_task");
+    executor_task.await.expect("executor_task");
 }
 
 pub fn find_in_file(
